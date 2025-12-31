@@ -1,0 +1,199 @@
+import * as XLSX from 'xlsx';
+import type { TrainingSession, ProcessingWarning, ExcelRow, ParsedFileData } from '../types';
+import { isValidTimeFormat, normalizeTime, parseTotals } from './validator';
+
+// Known column names
+const COL_DATE = 'Datum activiteit';
+const COL_TIME = 'Event time';
+const COL_EVENT_NAME = 'Event name';
+const COL_TOTALS = 'Totals';
+const TRAINER_MARKER = 'Trainer (1)';
+
+/**
+ * Parse Excel file and extract all data needed for processing
+ */
+export async function parseExcelFile(file: File): Promise<ParsedFileData> {
+  const arrayBuffer = await file.arrayBuffer();
+  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+
+  // Get the first sheet
+  const sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+
+  // Convert to JSON with header row
+  const rows = XLSX.utils.sheet_to_json<ExcelRow>(sheet, { defval: '' });
+
+  if (rows.length === 0) {
+    return {
+      sessions: [],
+      timeSlots: [],
+      trainerNames: [],
+      warnings: [{ row: 0, reason: 'MISSING_DATE', message: 'Excel file is empty or has no data rows' }],
+      fileName: file.name,
+    };
+  }
+
+  // Extract trainer names from column headers
+  const trainerNames = extractTrainerNamesFromRows(rows);
+
+  // Parse sessions and collect warnings
+  const { sessions, warnings } = parseSessionsFromRows(rows, trainerNames);
+
+  // Detect unique time slots
+  const timeSlots = detectTimeSlots(sessions);
+
+  return {
+    sessions,
+    timeSlots,
+    trainerNames,
+    warnings,
+    fileName: file.name,
+  };
+}
+
+/**
+ * Extract trainer names from Excel column headers
+ * Only includes trainers who have at least one "Trainer (1)" entry
+ */
+function extractTrainerNamesFromRows(rows: ExcelRow[]): string[] {
+  if (rows.length === 0) return [];
+
+  // Get all column names from first row
+  const firstRow = rows[0];
+  const allColumns = Object.keys(firstRow);
+
+  // Known non-trainer columns
+  const excludedColumns = new Set([COL_DATE, COL_TIME, COL_EVENT_NAME, COL_TOTALS]);
+
+  // Find columns that have at least one "Trainer (1)" value
+  const trainerColumns: string[] = [];
+
+  for (const col of allColumns) {
+    if (excludedColumns.has(col)) continue;
+
+    // Check if any row has "Trainer (1)" in this column
+    const hasTrainerMarker = rows.some(
+      (row) => String(row[col]).trim() === TRAINER_MARKER
+    );
+
+    if (hasTrainerMarker) {
+      trainerColumns.push(col);
+    }
+  }
+
+  return trainerColumns;
+}
+
+/**
+ * Parse training sessions from Excel rows
+ */
+function parseSessionsFromRows(
+  rows: ExcelRow[],
+  trainerNames: string[]
+): { sessions: TrainingSession[]; warnings: ProcessingWarning[] } {
+  const sessions: TrainingSession[] = [];
+  const warnings: ProcessingWarning[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNumber = i + 2; // +2 because: index starts at 0, and row 1 is header
+
+    // Get date
+    const date = String(row[COL_DATE] || '').trim();
+    if (!date) {
+      warnings.push({
+        row: rowNumber,
+        reason: 'MISSING_DATE',
+        message: `Row ${rowNumber}: Missing date (Datum activiteit)`,
+      });
+      continue;
+    }
+
+    // Get time
+    const rawTime = String(row[COL_TIME] || '').trim();
+    if (!rawTime) {
+      warnings.push({
+        row: rowNumber,
+        reason: 'MISSING_TIME',
+        message: `Row ${rowNumber}: Missing event time`,
+      });
+      continue;
+    }
+
+    const time = normalizeTime(rawTime);
+    if (!isValidTimeFormat(time)) {
+      warnings.push({
+        row: rowNumber,
+        reason: 'MISSING_TIME',
+        message: `Row ${rowNumber}: Invalid time format "${rawTime}". Expected HH:MM`,
+      });
+      continue;
+    }
+
+    // Get totals
+    const totalsValue = row[COL_TOTALS];
+    const totals = parseTotals(totalsValue);
+    if (totals === null) {
+      warnings.push({
+        row: rowNumber,
+        reason: 'MISSING_TOTALS',
+        message: `Row ${rowNumber}: Missing or invalid Totals value`,
+      });
+      continue;
+    }
+
+    // Get event name
+    const eventName = String(row[COL_EVENT_NAME] || '').trim();
+
+    // Get trainers present
+    const trainersPresent: string[] = [];
+    for (const trainerName of trainerNames) {
+      const value = String(row[trainerName] || '').trim();
+      if (value === TRAINER_MARKER) {
+        trainersPresent.push(trainerName);
+      }
+    }
+
+    // Verify totals matches trainers present count
+    if (trainersPresent.length !== totals) {
+      // This is just a sanity check - we trust the Totals column per requirements
+      // but log if there's a mismatch
+      console.warn(
+        `Row ${rowNumber}: Totals (${totals}) doesn't match trainer count (${trainersPresent.length})`
+      );
+    }
+
+    sessions.push({
+      date,
+      time,
+      eventName,
+      totals,
+      trainersPresent,
+      rowNumber,
+    });
+  }
+
+  return { sessions, warnings };
+}
+
+/**
+ * Detect unique time slots from sessions
+ * Returns sorted array of time slots in HH:MM format
+ */
+export function detectTimeSlots(sessions: TrainingSession[]): string[] {
+  const uniqueTimeSlots = new Set(sessions.map((s) => s.time));
+  return Array.from(uniqueTimeSlots).sort();
+}
+
+/**
+ * Count sessions per time slot (for display purposes)
+ */
+export function countSessionsPerTimeSlot(
+  sessions: TrainingSession[]
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const session of sessions) {
+    counts[session.time] = (counts[session.time] || 0) + 1;
+  }
+  return counts;
+}
