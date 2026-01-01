@@ -94,12 +94,34 @@ function parseSessionsFromRows(
   const sessions: TrainingSession[] = [];
   const warnings: ProcessingWarning[] = [];
 
+  let consecutiveEmptyRows = 0;
+  
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const rowNumber = i + 2; // +2 because: index starts at 0, and row 1 is header
 
-    // Get date
+    // Check for completely empty row
     const date = String(row[COL_DATE] || '').trim();
+    const rawTime = String(row[COL_TIME] || '').trim();
+    const eventName = String(row[COL_EVENT_NAME] || '').trim();
+    
+    // Check if row is completely empty (no date, time, or event name)
+    if (!date && !rawTime && !eventName) {
+      consecutiveEmptyRows++;
+      
+      // Stop processing after 2 consecutive empty rows (end of data section)
+      if (consecutiveEmptyRows >= 2) {
+        break;
+      }
+      
+      // Skip single empty row and continue (common in Excel files)
+      continue;
+    }
+    
+    // Reset counter when we find a data row
+    consecutiveEmptyRows = 0;
+    
+    // Validate date
     if (!date) {
       warnings.push({
         row: rowNumber,
@@ -109,8 +131,7 @@ function parseSessionsFromRows(
       continue;
     }
 
-    // Get time
-    const rawTime = String(row[COL_TIME] || '').trim();
+    // Validate time
     if (!rawTime) {
       warnings.push({
         row: rowNumber,
@@ -120,8 +141,8 @@ function parseSessionsFromRows(
       continue;
     }
 
-    const time = normalizeTime(rawTime);
-    if (!isValidTimeFormat(time)) {
+    const normalizedTime = normalizeTime(rawTime);
+    if (!isValidTimeFormat(normalizedTime)) {
       warnings.push({
         row: rowNumber,
         reason: 'MISSING_TIME',
@@ -130,7 +151,7 @@ function parseSessionsFromRows(
       continue;
     }
 
-    // Get totals
+    // Validate totals
     const totalsValue = row[COL_TOTALS];
     const totals = parseTotals(totalsValue);
     if (totals === null) {
@@ -141,9 +162,6 @@ function parseSessionsFromRows(
       });
       continue;
     }
-
-    // Get event name
-    const eventName = String(row[COL_EVENT_NAME] || '').trim();
 
     // Get trainers present
     const trainersPresent: string[] = [];
@@ -165,7 +183,7 @@ function parseSessionsFromRows(
 
     sessions.push({
       date,
-      time,
+      time: normalizedTime,
       eventName,
       totals,
       trainersPresent,
