@@ -154,7 +154,7 @@ describe('calculatePayments', () => {
   test('trainer with 0 hours is filtered out', () => {
     const trainerHours = [
       { trainerName: 'Trainer A', hoursByTimeSlot: { '18:30': 10 }, totalHours: 10, sessionCount: 5 },
-      { trainerName: 'Trainer B', hoursByTimeSlot: {}, totalHours: 0, sessionCount: 0 },
+      { trainerName: 'Trainer B', hoursByTimeSlot: {} as Record<string, number>, totalHours: 0, sessionCount: 0 },
     ];
 
     const result = calculatePayments(trainerHours, 15, 'U10');

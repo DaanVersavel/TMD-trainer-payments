@@ -17,7 +17,7 @@ export type GroupConfig = {
   groupName: string;       // e.g., "U10"
   pricePerHour: number;    // e.g., 15
   timeSlots: TimeSlotConfig[];
-  lastUsed: string;        // ISO date string
+  lastUsed?: string;       // ISO date string (optional, added by storage service)
 };
 
 // ============================================
