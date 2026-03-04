@@ -155,19 +155,32 @@ export function accumulateResults(
     }
   }
 
-  // Calculate grand totals
+  // Preserve existing adjustments, only for trainers still present
+  const trainerAdjustments: Record<string, number> = {};
+  for (const name of Object.keys(trainerTotals)) {
+    if (existingResults.trainerAdjustments[name]) {
+      trainerAdjustments[name] = existingResults.trainerAdjustments[name];
+    }
+  }
+
+  // Calculate grand totals (including adjustments)
   const grandTotalHours = Object.values(trainerTotals).reduce(
     (sum, t) => sum + t.hours,
+    0
+  );
+  const totalAdjustments = Object.values(trainerAdjustments).reduce(
+    (sum, a) => sum + a,
     0
   );
   const grandTotalPayment = Object.values(trainerTotals).reduce(
     (sum, t) => sum + t.payment,
     0
-  );
+  ) + totalAdjustments;
 
   return {
     groups: updatedGroups,
     trainerTotals,
+    trainerAdjustments,
     grandTotalHours,
     grandTotalPayment,
   };
@@ -200,19 +213,64 @@ export function removeGroup(
     }
   }
 
+  // Preserve adjustments for trainers still present
+  const trainerAdjustments: Record<string, number> = {};
+  for (const name of Object.keys(trainerTotals)) {
+    if (results.trainerAdjustments[name]) {
+      trainerAdjustments[name] = results.trainerAdjustments[name];
+    }
+  }
+
   const grandTotalHours = Object.values(trainerTotals).reduce(
     (sum, t) => sum + t.hours,
+    0
+  );
+  const totalAdjustments = Object.values(trainerAdjustments).reduce(
+    (sum, a) => sum + a,
     0
   );
   const grandTotalPayment = Object.values(trainerTotals).reduce(
     (sum, t) => sum + t.payment,
     0
-  );
+  ) + totalAdjustments;
 
   return {
     groups: updatedGroups,
     trainerTotals,
+    trainerAdjustments,
     grandTotalHours,
+    grandTotalPayment,
+  };
+}
+
+/**
+ * Update a trainer's manual adjustment and recalculate grand total
+ */
+export function updateTrainerAdjustment(
+  results: CombinedResults,
+  trainerName: string,
+  amount: number
+): CombinedResults {
+  const trainerAdjustments = { ...results.trainerAdjustments };
+
+  if (amount === 0) {
+    delete trainerAdjustments[trainerName];
+  } else {
+    trainerAdjustments[trainerName] = amount;
+  }
+
+  const totalAdjustments = Object.values(trainerAdjustments).reduce(
+    (sum, a) => sum + a,
+    0
+  );
+  const grandTotalPayment = Object.values(results.trainerTotals).reduce(
+    (sum, t) => sum + t.payment,
+    0
+  ) + totalAdjustments;
+
+  return {
+    ...results,
+    trainerAdjustments,
     grandTotalPayment,
   };
 }

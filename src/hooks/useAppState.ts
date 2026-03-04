@@ -10,7 +10,7 @@ import type {
 } from '../types';
 import { INITIAL_APP_STATE, INITIAL_COMBINED_RESULTS } from '../types';
 import { parseExcelFile, countSessionsPerTimeSlot } from '../services/excelParser';
-import { processGroup, accumulateResults, removeGroup } from '../services/paymentCalculator';
+import { processGroup, accumulateResults, removeGroup, updateTrainerAdjustment as calcUpdateAdjustment } from '../services/paymentCalculator';
 import { saveGroupConfig, getAllConfigs } from '../services/storageService';
 import { validateConfiguration, validateAllTimeSlotsConfigured } from '../services/validator';
 
@@ -296,6 +296,12 @@ export function useAppState() {
     dispatch({ type: 'LOAD_SAVED_CONFIGS', payload: configs });
   }, [state.accumulatedResults]);
 
+  // Update trainer adjustment
+  const setTrainerAdjustment = useCallback((trainerName: string, amount: number) => {
+    const newAccumulated = calcUpdateAdjustment(state.accumulatedResults, trainerName, amount);
+    dispatch({ type: 'SET_ACCUMULATED_RESULTS', payload: newAccumulated });
+  }, [state.accumulatedResults]);
+
   // View combined results
   const viewCombined = useCallback(() => {
     dispatch({ type: 'SET_STEP', payload: 'combined' });
@@ -328,6 +334,7 @@ export function useAppState() {
       resetAll,
       deleteGroup,
       updateGroup,
+      setTrainerAdjustment,
       viewCombined,
       reloadConfigs,
     },

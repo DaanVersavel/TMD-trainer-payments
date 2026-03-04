@@ -110,6 +110,7 @@ export type GroupResults = {
 export type CombinedResults = {
   groups: GroupResults[];
   trainerTotals: Record<string, { hours: number; payment: number }>;
+  trainerAdjustments: Record<string, number>;
   grandTotalHours: number;
   grandTotalPayment: number;
 };
@@ -156,6 +157,7 @@ export type AppState = {
 export const INITIAL_COMBINED_RESULTS: CombinedResults = {
   groups: [],
   trainerTotals: {},
+  trainerAdjustments: {},
   grandTotalHours: 0,
   grandTotalPayment: 0,
 };

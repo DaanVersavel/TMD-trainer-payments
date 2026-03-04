@@ -217,6 +217,7 @@ function App() {
                   onDeleteGroup={actions.deleteGroup}
                   onEditGroup={handleEditGroup}
                   onStartOver={actions.resetAll}
+                  onTrainerAdjustment={actions.setTrainerAdjustment}
                 />
               </div>
             )}

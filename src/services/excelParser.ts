@@ -105,6 +105,11 @@ function parseSessionsFromRows(
     const rawTime = String(row[COL_TIME] || '').trim();
     const eventName = String(row[COL_EVENT_NAME] || '').trim();
     
+    // Skip summary/total rows (e.g. "Totaal" row at the end)
+    if (!date && !rawTime && eventName.toLowerCase().startsWith('totaal')) {
+      continue;
+    }
+
     // Check if row is completely empty (no date, time, or event name)
     if (!date && !rawTime && !eventName) {
       consecutiveEmptyRows++;
@@ -151,18 +156,6 @@ function parseSessionsFromRows(
       continue;
     }
 
-    // Validate totals
-    const totalsValue = row[COL_TOTALS];
-    const totals = parseTotals(totalsValue);
-    if (totals === null) {
-      warnings.push({
-        row: rowNumber,
-        reason: 'MISSING_TOTALS',
-        message: `Row ${rowNumber}: Missing or invalid Totals value`,
-      });
-      continue;
-    }
-
     // Get trainers present
     const trainersPresent: string[] = [];
     for (const trainerName of trainerNames) {
@@ -172,13 +165,38 @@ function parseSessionsFromRows(
       }
     }
 
-    // Verify totals matches trainers present count
-    if (trainersPresent.length !== totals) {
-      // This is just a sanity check - we trust the Totals column per requirements
-      // but log if there's a mismatch
-      console.warn(
-        `Row ${rowNumber}: Totals (${totals}) doesn't match trainer count (${trainersPresent.length})`
-      );
+    // Validate totals - if column is missing, auto-calculate from trainers present
+    const hasTotalsColumn = COL_TOTALS in row;
+    let totals: number | null;
+
+    if (hasTotalsColumn) {
+      totals = parseTotals(row[COL_TOTALS]);
+      if (totals === null) {
+        warnings.push({
+          row: rowNumber,
+          reason: 'MISSING_TOTALS',
+          message: `Row ${rowNumber}: Missing or invalid Totals value`,
+        });
+        continue;
+      }
+
+      // Verify totals matches trainers present count
+      if (trainersPresent.length !== totals) {
+        console.warn(
+          `Row ${rowNumber}: Totals (${totals}) doesn't match trainer count (${trainersPresent.length})`
+        );
+      }
+    } else {
+      // No Totals column - auto-calculate from trainers present
+      totals = trainersPresent.length;
+      if (totals === 0) {
+        warnings.push({
+          row: rowNumber,
+          reason: 'MISSING_TOTALS',
+          message: `Row ${rowNumber}: No trainers marked as present`,
+        });
+        continue;
+      }
     }
 
     sessions.push({

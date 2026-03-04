@@ -4,6 +4,7 @@ import {
   calculatePayments,
   accumulateResults,
   removeGroup,
+  updateTrainerAdjustment,
   roundHours,
   formatCurrency,
   formatHours,
@@ -328,6 +329,7 @@ describe('removeGroup', () => {
     const combined: CombinedResults = {
       groups,
       trainerTotals: { 'Trainer A': { hours: 45, payment: 675 } },
+      trainerAdjustments: {},
       grandTotalHours: 45,
       grandTotalPayment: 675,
     };
@@ -358,6 +360,7 @@ describe('removeGroup', () => {
         },
       ],
       trainerTotals: {},
+      trainerAdjustments: {},
       grandTotalHours: 10,
       grandTotalPayment: 150,
     };
@@ -365,6 +368,176 @@ describe('removeGroup', () => {
     const result = removeGroup(combined, 'U10');
 
     expect(result).toEqual(INITIAL_COMBINED_RESULTS);
+  });
+});
+
+describe('updateTrainerAdjustment', () => {
+  const baseCombined: CombinedResults = {
+    groups: [],
+    trainerTotals: {
+      'Trainer A': { hours: 10, payment: 150 },
+      'Trainer B': { hours: 5, payment: 75 },
+    },
+    trainerAdjustments: {},
+    grandTotalHours: 15,
+    grandTotalPayment: 225,
+  };
+
+  test('adding a positive adjustment updates payment and grand total', () => {
+    const result = updateTrainerAdjustment(baseCombined, 'Trainer A', 50);
+
+    expect(result.trainerAdjustments['Trainer A']).toBe(50);
+    expect(result.grandTotalPayment).toBe(275);
+  });
+
+  test('adding a negative adjustment reduces grand total', () => {
+    const result = updateTrainerAdjustment(baseCombined, 'Trainer B', -20);
+
+    expect(result.trainerAdjustments['Trainer B']).toBe(-20);
+    expect(result.grandTotalPayment).toBe(205);
+  });
+
+  test('setting adjustment to 0 removes it', () => {
+    const withAdjustment = updateTrainerAdjustment(baseCombined, 'Trainer A', 50);
+    const result = updateTrainerAdjustment(withAdjustment, 'Trainer A', 0);
+
+    expect(result.trainerAdjustments['Trainer A']).toBeUndefined();
+    expect(result.grandTotalPayment).toBe(225);
+  });
+
+  test('multiple adjustments accumulate in grand total', () => {
+    let result = updateTrainerAdjustment(baseCombined, 'Trainer A', 30);
+    result = updateTrainerAdjustment(result, 'Trainer B', 20);
+
+    expect(result.grandTotalPayment).toBe(275);
+  });
+});
+
+describe('accumulateResults preserves adjustments', () => {
+  test('existing adjustments are kept when adding a new group', () => {
+    const group1: GroupResults = {
+      groupName: 'U10',
+      pricePerHour: 15,
+      trainerPayments: [
+        { trainerName: 'Trainer A', totalHours: 10, totalPayment: 150, groupName: 'U10' },
+      ],
+      trainerHours: [],
+      totalHours: 10,
+      totalPayment: 150,
+      processedAt: new Date().toISOString(),
+      warnings: [],
+      sessionCount: 5,
+    };
+
+    const group2: GroupResults = {
+      groupName: 'U12',
+      pricePerHour: 15,
+      trainerPayments: [
+        { trainerName: 'Trainer A', totalHours: 5, totalPayment: 75, groupName: 'U12' },
+      ],
+      trainerHours: [],
+      totalHours: 5,
+      totalPayment: 75,
+      processedAt: new Date().toISOString(),
+      warnings: [],
+      sessionCount: 3,
+    };
+
+    let combined = accumulateResults(INITIAL_COMBINED_RESULTS, group1);
+    combined = updateTrainerAdjustment(combined, 'Trainer A', 50);
+    combined = accumulateResults(combined, group2);
+
+    expect(combined.trainerAdjustments['Trainer A']).toBe(50);
+    expect(combined.grandTotalPayment).toBe(275); // 150 + 75 + 50
+  });
+});
+
+describe('removeGroup preserves adjustments for remaining trainers', () => {
+  test('adjustment kept for trainer still in other groups', () => {
+    const combined: CombinedResults = {
+      groups: [
+        {
+          groupName: 'U10',
+          pricePerHour: 15,
+          trainerPayments: [
+            { trainerName: 'Trainer A', totalHours: 10, totalPayment: 150, groupName: 'U10' },
+          ],
+          trainerHours: [],
+          totalHours: 10,
+          totalPayment: 150,
+          processedAt: new Date().toISOString(),
+          warnings: [],
+          sessionCount: 5,
+        },
+        {
+          groupName: 'U12',
+          pricePerHour: 15,
+          trainerPayments: [
+            { trainerName: 'Trainer A', totalHours: 5, totalPayment: 75, groupName: 'U12' },
+          ],
+          trainerHours: [],
+          totalHours: 5,
+          totalPayment: 75,
+          processedAt: new Date().toISOString(),
+          warnings: [],
+          sessionCount: 3,
+        },
+      ],
+      trainerTotals: { 'Trainer A': { hours: 15, payment: 225 } },
+      trainerAdjustments: { 'Trainer A': 50 },
+      grandTotalHours: 15,
+      grandTotalPayment: 275,
+    };
+
+    const result = removeGroup(combined, 'U12');
+
+    expect(result.trainerAdjustments['Trainer A']).toBe(50);
+    expect(result.grandTotalPayment).toBe(200); // 150 + 50
+  });
+
+  test('adjustment removed when trainer no longer in any group', () => {
+    const combined: CombinedResults = {
+      groups: [
+        {
+          groupName: 'U10',
+          pricePerHour: 15,
+          trainerPayments: [
+            { trainerName: 'Trainer A', totalHours: 10, totalPayment: 150, groupName: 'U10' },
+          ],
+          trainerHours: [],
+          totalHours: 10,
+          totalPayment: 150,
+          processedAt: new Date().toISOString(),
+          warnings: [],
+          sessionCount: 5,
+        },
+        {
+          groupName: 'U12',
+          pricePerHour: 15,
+          trainerPayments: [
+            { trainerName: 'Trainer B', totalHours: 5, totalPayment: 75, groupName: 'U12' },
+          ],
+          trainerHours: [],
+          totalHours: 5,
+          totalPayment: 75,
+          processedAt: new Date().toISOString(),
+          warnings: [],
+          sessionCount: 3,
+        },
+      ],
+      trainerTotals: {
+        'Trainer A': { hours: 10, payment: 150 },
+        'Trainer B': { hours: 5, payment: 75 },
+      },
+      trainerAdjustments: { 'Trainer B': 30 },
+      grandTotalHours: 15,
+      grandTotalPayment: 255,
+    };
+
+    const result = removeGroup(combined, 'U12');
+
+    expect(result.trainerAdjustments['Trainer B']).toBeUndefined();
+    expect(result.grandTotalPayment).toBe(150);
   });
 });
 
